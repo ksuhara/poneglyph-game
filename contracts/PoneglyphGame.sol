@@ -15,8 +15,9 @@ contract PoneglyphGame is ERC721 {
     Poneglyph[] public poneglyphs;
     mapping(uint256 => uint256) public depositedAmount;
     mapping(address => uint256[]) private playerToTokenIds;
-    // mapping(address => uint256) private lastActionTimestamp;
-    // uint256 private constant COOLDOWN_PERIOD = 1 hours;
+    mapping(address => uint256) private lastActionTimestamp;
+    uint256 private constant COOLDOWN_PERIOD = 1 hours;
+    uint256 private constant WIN_PERIOD = 1 days;
 
 
     event Victory(address indexed winner);
@@ -38,6 +39,7 @@ contract PoneglyphGame is ERC721 {
     function mintCopy(uint256 tokenId, uint256 amount) external {
         require(poneglyphs[tokenId].isOriginal, "Cannot mint copy from copy");
         require(erc20Token.balanceOf(msg.sender) >= amount, "Insufficient balance");
+        require(block.timestamp >= lastActionTimestamp[msg.sender] + COOLDOWN_PERIOD, "Action cooldown");
         address originalOwner = ownerOf(tokenId);
         uint256 winningChance = (amount * 150) / (amount + depositedAmount[tokenId]);
         uint256 randomNumber = randomness();
@@ -49,12 +51,12 @@ contract PoneglyphGame is ERC721 {
         } else {
             erc20Token.transferFrom(msg.sender, originalOwner, amount / 2);
         }
-        
+        lastActionTimestamp[msg.sender] = block.timestamp;
     }
 
-    function challengeOriginal(uint256 originalId, uint256 amount) external {
+    function challengeOriginal(uint256 originalId, uint256 amount) onlyNotOriginalOwner external {
+        require(block.timestamp >= lastActionTimestamp[msg.sender] + COOLDOWN_PERIOD, "Action cooldown");
         address originalOwner = ownerOf(originalId);
-        checkIfAddressIsOriginalHolder();
         uint256 requiredAmount = amount;
         require(erc20Token.balanceOf(msg.sender) >= requiredAmount, "Insufficient balance");
 
@@ -66,6 +68,7 @@ contract PoneglyphGame is ERC721 {
         } else {
             erc20Token.transferFrom(msg.sender, originalOwner, amount / 2);
         }
+        lastActionTimestamp[msg.sender] = block.timestamp;
     }
 
     function findOriginalTokenId(uint256 originalId) internal view returns (uint256) {
@@ -77,15 +80,18 @@ contract PoneglyphGame is ERC721 {
         revert("Original not found");
     }
 
-    function checkIfAddressIsOriginalHolder() internal view{
+    modifier onlyNotOriginalOwner() {
         for (uint256 i = 0; i < NUM_PONEGLYPHS; i++) {
             if ( ownerOf(i) == msg.sender) {
-                revert("Already own original");
+                revert("Already own an original");
             }
         }
+        _;
     }
 
     function checkVictory(address player) external {
+        require(block.timestamp >= lastActionTimestamp[msg.sender] + WIN_PERIOD, "Action cooldown");
+
         if (playerToTokenIds[player].length == NUM_PONEGLYPHS) {
             emit Victory(player);
         }
